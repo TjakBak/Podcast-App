@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ episode.title }} - The KleinAlly Show</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><a href="/">The KleinAlly Show</a></h1>
+            <p class="subtitle">Episode Details</p>
+        </header>
+
+        <div class="episode-detail">
+            <h2>{{ episode.title }}</h2>
+
+            <div class="episode-meta">
+                <span class="date">{{ episode.formatted_date }}</span>
+                {% if episode.duration %}
+                <span class="duration">Duration: {{ episode.duration }}</span>
+                {% endif %}
+            </div>
+
+            {% if episode.image_url %}
+            <img src="{{ episode.image_url }}" alt="{{ episode.title }}" class="episode-image">
+            {% endif %}
+
+            {% if episode.audio_url %}
+            <div class="audio-player">
+                <audio controls>
+                    <source src="{{ episode.audio_url }}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+                <p><a href="{{ episode.audio_url }}" target="_blank" class="download-link">Download Episode</a></p>
+            </div>
+            {% endif %}
+
+            {% if episode.description %}
+            <div class="description">
+                <h3>Description</h3>
+                <p>{{ episode.description }}</p>
+            </div>
+            {% endif %}
+
+            <div class="actions">
+                <a href="/" class="button">Back to Search</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

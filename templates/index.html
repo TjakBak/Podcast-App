@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Search - The KleinAlly Show</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>The KleinAlly Show - Podcast Search</h1>
+            <p class="subtitle">Search through all episodes instantly</p>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-label">Total Episodes:</span>
+                <span class="stat-value">{{ stats.total }}</span>
+            </div>
+            {% if stats.oldest %}
+            <div class="stat">
+                <span class="stat-label">Oldest:</span>
+                <span class="stat-value">{{ stats.oldest.publish_date[:10] if stats.oldest.publish_date else 'N/A' }}</span>
+            </div>
+            {% endif %}
+            {% if stats.newest %}
+            <div class="stat">
+                <span class="stat-label">Newest:</span>
+                <span class="stat-value">{{ stats.newest.publish_date[:10] if stats.newest.publish_date else 'N/A' }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search episodes by title, description, or keywords..." autofocus>
+
+            <div class="search-options">
+                <label>
+                    <input type="radio" name="sort" value="newest" checked> Newest First
+                </label>
+                <label>
+                    <input type="radio" name="sort" value="oldest"> Oldest First
+                </label>
+                <label>
+                    Show:
+                    <select id="limitSelect">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="500">500</option>
+                        <option value="9999">All</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div id="results">
+            <p class="info-text">Enter a search term or press Enter to see all episodes</p>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <p>Loading episodes...</p>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
