@@ -53,7 +53,18 @@ class PodcastScraper:
                 return []
 
             # Wait for content to load
-            await asyncio.sleep(3)
+            print("Waiting for page content to load...")
+            await asyncio.sleep(5)
+
+            # Debug: Check if page loaded properly
+            content = await page.content()
+            if len(content) < 10000:
+                print("⚠ Warning: Page content seems very small, might not have loaded properly")
+
+            # Save page for debugging if needed
+            with open('page_snapshot.html', 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("Saved page snapshot to: page_snapshot.html")
 
             # Click "Load More" button repeatedly until all episodes are loaded
             load_more_count = 0
@@ -127,31 +138,92 @@ class PodcastScraper:
         episodes = []
 
         try:
+            # First, try to find JSON data embedded in the page (many React apps do this)
+            print("\nSearching for embedded JSON data...")
+            json_episodes = await self._extract_from_json_scripts(page)
+            if json_episodes:
+                print(f"✓ Found {len(json_episodes)} episodes from JSON data")
+                return json_episodes
+
             # Try to extract episodes using common selectors
             # Most podcast sites use article tags or divs with specific classes
+            print("\nSearching for episodes in page DOM...")
             episode_selectors = [
                 'article',
-                '[class*="episode"]',
-                '[class*="podcast-item"]',
+                '[class*="episode" i]',
+                '[class*="Episode" i]',
+                '[class*="podcast-item" i]',
                 '[data-episode]',
-                '[class*="list-item"]'
+                '[data-testid*="episode"]',
+                '[class*="list-item" i]',
+                '[class*="card" i]',
+                'li[class*="item"]',
+                'div[class*="item"]',
+                'a[href*="episode"]'
             ]
 
             for selector in episode_selectors:
                 elements = await page.query_selector_all(selector)
-                if elements:
-                    print(f"Found {len(elements)} elements with selector: {selector}")
+                if elements and len(elements) > 2:  # Need at least 3 elements to consider it valid
+                    print(f"✓ Found {len(elements)} elements with selector: {selector}")
 
                     for elem in elements:
                         episode = await self._extract_episode_data(elem)
-                        if episode and episode.get('title'):
+                        if episode and episode.get('title') and len(episode.get('title', '')) > 5:
                             episodes.append(episode)
 
                     if episodes:  # If we found episodes, don't try other selectors
+                        print(f"✓ Successfully extracted {len(episodes)} episodes")
                         break
+                elif elements:
+                    print(f"  Found {len(elements)} elements with '{selector}' (too few, trying next)")
+
+            if not episodes:
+                print("\n⚠ No episodes found with standard selectors")
+                print("Run 'python debug_page.py' to inspect the page structure")
 
         except Exception as e:
             print(f"Error extracting episodes: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return episodes
+
+    async def _extract_from_json_scripts(self, page) -> List[Dict]:
+        """Extract episode data from JSON embedded in script tags"""
+        episodes = []
+
+        try:
+            # Find all script tags that might contain JSON data
+            scripts = await page.query_selector_all('script[type="application/json"], script[type="application/ld+json"], script:not([src])')
+
+            for script in scripts:
+                try:
+                    content = await script.inner_text()
+                    if not content or len(content) < 100:
+                        continue
+
+                    # Check if it looks like JSON
+                    content = content.strip()
+                    if not (content.startswith('{') or content.startswith('[')):
+                        continue
+
+                    # Try to parse as JSON
+                    data = json.loads(content)
+
+                    # Look for episode data in the JSON
+                    if 'episode' in content.lower() or 'podcast' in content.lower():
+                        extracted = self._extract_episodes_from_api(data)
+                        if extracted:
+                            episodes.extend(extracted)
+
+                except json.JSONDecodeError:
+                    continue
+                except Exception as e:
+                    continue
+
+        except Exception as e:
+            print(f"Error extracting from JSON scripts: {e}")
 
         return episodes
 
@@ -211,29 +283,43 @@ class PodcastScraper:
             if isinstance(data, list):
                 items = data
             elif isinstance(data, dict):
-                # Try common keys
-                for key in ['episodes', 'items', 'data', 'results', 'content']:
-                    if key in data:
+                # Try common keys (case-insensitive search)
+                for key in data.keys():
+                    key_lower = key.lower()
+                    if key_lower in ['episodes', 'items', 'data', 'results', 'content', 'list', 'shows']:
                         items = data[key]
                         if isinstance(items, list):
+                            print(f"  Found episode list under key: '{key}'")
                             break
+
+                # Also check nested structures
+                if not items:
+                    for key in ['props', 'pageProps', 'initialState', 'state', '__NEXT_DATA__']:
+                        if key in data and isinstance(data[key], dict):
+                            nested_episodes = self._extract_episodes_from_api(data[key])
+                            if nested_episodes:
+                                return nested_episodes
 
             if items and isinstance(items, list):
                 for item in items:
                     if isinstance(item, dict):
+                        # Try to extract episode data with various key names
                         episode = {
-                            'episode_id': item.get('id', item.get('guid', '')),
-                            'title': item.get('title', item.get('name', '')),
-                            'description': item.get('description', item.get('summary', '')),
+                            'episode_id': str(item.get('id', item.get('guid', item.get('episodeId', '')))),
+                            'title': item.get('title', item.get('name', item.get('episodeName', ''))),
+                            'description': item.get('description', item.get('summary', item.get('desc', ''))),
                             'publish_date': self._normalize_date(
-                                item.get('publishDate', item.get('published', item.get('date', '')))
+                                item.get('publishDate', item.get('published', item.get('date',
+                                item.get('releaseDate', item.get('airDate', '')))))
                             ),
-                            'audio_url': item.get('audioUrl', item.get('url', item.get('enclosure', {}).get('url', ''))),
-                            'duration': str(item.get('duration', '')),
-                            'image_url': item.get('image', item.get('thumbnail', '')),
+                            'audio_url': item.get('audioUrl', item.get('url', item.get('mediaUrl',
+                                item.get('audio', item.get('enclosure', {}).get('url', ''))))),
+                            'duration': str(item.get('duration', item.get('length', ''))),
+                            'image_url': item.get('image', item.get('thumbnail', item.get('imageUrl',
+                                item.get('artwork', '')))),
                             'metadata': item
                         }
-                        if episode['title']:
+                        if episode['title'] and len(episode['title']) > 3:
                             episodes.append(episode)
 
         except Exception as e:
